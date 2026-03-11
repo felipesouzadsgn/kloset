@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, Shirt, Heart, Search, Filter, Trash2, ExternalLink,
   Package, X, ChevronLeft, Menu, CheckCircle2, ImagePlus,
@@ -10,10 +10,27 @@ import { Card } from './components/Card';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('wardrobe');
-  const [wardrobe, setWardrobe] = useState(INITIAL_WARDROBE);
-  const [wishlist, setWishlist] = useState(INITIAL_WISHLIST);
-  const [looks, setLooks] = useState(INITIAL_LOOKS);
-  const [inspirations, setInspirations] = useState(INITIAL_INSPIRATIONS);
+  const [wardrobe, setWardrobe] = useState(() => {
+    const saved = localStorage.getItem('kloset_wardrobe');
+    return saved ? JSON.parse(saved) : INITIAL_WARDROBE;
+  });
+  const [wishlist, setWishlist] = useState(() => {
+    const saved = localStorage.getItem('kloset_wishlist');
+    return saved ? JSON.parse(saved) : INITIAL_WISHLIST;
+  });
+  const [looks, setLooks] = useState(() => {
+    const saved = localStorage.getItem('kloset_looks');
+    return saved ? JSON.parse(saved) : INITIAL_LOOKS;
+  });
+  const [inspirations, setInspirations] = useState(() => {
+    const saved = localStorage.getItem('kloset_inspirations');
+    return saved ? JSON.parse(saved) : INITIAL_INSPIRATIONS;
+  });
+
+  useEffect(() => { localStorage.setItem('kloset_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
+  useEffect(() => { localStorage.setItem('kloset_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
+  useEffect(() => { localStorage.setItem('kloset_looks', JSON.stringify(looks)); }, [looks]);
+  useEffect(() => { localStorage.setItem('kloset_inspirations', JSON.stringify(inspirations)); }, [inspirations]);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLookModalOpen, setIsLookModalOpen] = useState(false);
@@ -41,7 +58,33 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setFormData({ ...formData, image: reader.result as string }); 
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          setFormData({ ...formData, image: dataUrl });
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
