@@ -10,27 +10,27 @@ import { Card } from './components/Card';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('wardrobe');
-  const [wardrobe, setWardrobe] = useState(() => {
-    const saved = localStorage.getItem('kloset_wardrobe');
-    return saved ? JSON.parse(saved) : INITIAL_WARDROBE;
-  });
-  const [wishlist, setWishlist] = useState(() => {
-    const saved = localStorage.getItem('kloset_wishlist');
-    return saved ? JSON.parse(saved) : INITIAL_WISHLIST;
-  });
-  const [looks, setLooks] = useState(() => {
-    const saved = localStorage.getItem('kloset_looks');
-    return saved ? JSON.parse(saved) : INITIAL_LOOKS;
-  });
-  const [inspirations, setInspirations] = useState(() => {
-    const saved = localStorage.getItem('kloset_inspirations');
-    return saved ? JSON.parse(saved) : INITIAL_INSPIRATIONS;
-  });
+  const [wardrobe, setWardrobe] = useState<any[]>([]);
+  const [wishlist, setWishlist] = useState<any[]>([]);
+  const [looks, setLooks] = useState<any[]>([]);
+  const [inspirations, setInspirations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => { localStorage.setItem('kloset_wardrobe', JSON.stringify(wardrobe)); }, [wardrobe]);
-  useEffect(() => { localStorage.setItem('kloset_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
-  useEffect(() => { localStorage.setItem('kloset_looks', JSON.stringify(looks)); }, [looks]);
-  useEffect(() => { localStorage.setItem('kloset_inspirations', JSON.stringify(inspirations)); }, [inspirations]);
+  useEffect(() => {
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(data => {
+        setWardrobe(data.wardrobe || []);
+        setWishlist(data.wishlist || []);
+        setLooks(data.looks || []);
+        setInspirations(data.inspirations || []);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to load data:", err);
+        setIsLoading(false);
+      });
+  }, []);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLookModalOpen, setIsLookModalOpen] = useState(false);
@@ -90,36 +90,60 @@ export default function App() {
     }
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!formData.name) return; 
     
     if (activeTab === 'inspirations') {
       const newInspiration = {
-        id: Date.now(),
         name: formData.name,
         image: formData.image || "https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&h=500&fit=crop",
         url: formData.url || ""
       };
-      setInspirations([newInspiration, ...inspirations]);
-      showToast('Inspiração guardada com sucesso! ✨');
+      
+      try {
+        const res = await fetch('/api/inspirations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newInspiration)
+        });
+        const { id } = await res.json();
+        setInspirations([{ ...newInspiration, id }, ...inspirations]);
+        showToast('Inspiração guardada com sucesso! ✨');
+      } catch (e) {
+        showToast('Erro ao guardar inspiração.');
+      }
     } else {
       const newItem = {
-        id: Date.now(),
+        tab: activeTab,
         name: formData.name,
         category: formData.category,
         occasion: formData.occasion,
         color: formData.color,
         brand: formData.brand || "Sem Marca", 
         price: formData.price || "R$ 0",
-        image: formData.image || "https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&h=500&fit=crop" 
+        image: formData.image || "https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&h=500&fit=crop",
+        purchaseDate: new Date().toLocaleDateString('pt-BR'),
+        usageCount: 0
       };
 
-      if (activeTab === 'wardrobe') {
-        setWardrobe([newItem, ...wardrobe]);
-        showToast('Peça guardada no acervo!');
-      } else if (activeTab === 'wishlist') {
-        setWishlist([newItem, ...wishlist]);
-        showToast('Item adicionado aos desejos!');
+      try {
+        const res = await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newItem)
+        });
+        const { id } = await res.json();
+        const itemWithId = { ...newItem, id };
+
+        if (activeTab === 'wardrobe') {
+          setWardrobe([itemWithId, ...wardrobe]);
+          showToast('Peça guardada no acervo!');
+        } else if (activeTab === 'wishlist') {
+          setWishlist([itemWithId, ...wishlist]);
+          showToast('Item adicionado aos desejos!');
+        }
+      } catch (e) {
+        showToast('Erro ao guardar item.');
       }
     }
     
@@ -127,21 +151,34 @@ export default function App() {
     setFormData({ name: '', category: 'Tops', occasion: 'Casual', color: '', price: '', brand: '', image: '', url: '' }); 
   };
 
-  const handleSaveLook = () => {
+  const handleSaveLook = async () => {
     if (!currentLookName || currentLookItems.length === 0) {
       showToast('Adicione um nome e pelo menos uma peça.');
       return;
     }
-    const newLook = {
-      id: Date.now(),
-      name: currentLookName,
-      items: currentLookItems.map(item => item.id)
-    };
-    setLooks([newLook, ...looks]);
-    showToast('Look guardado com sucesso! ✨');
-    setIsLookModalOpen(false);
-    setCurrentLookName('');
-    setCurrentLookItems([]);
+    
+    const itemIds = currentLookItems.map(item => item.id);
+    try {
+      const res = await fetch('/api/looks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: currentLookName, items: itemIds })
+      });
+      const { id } = await res.json();
+      
+      const newLook = {
+        id,
+        name: currentLookName,
+        items: itemIds
+      };
+      setLooks([newLook, ...looks]);
+      showToast('Look guardado com sucesso! ✨');
+      setIsLookModalOpen(false);
+      setCurrentLookName('');
+      setCurrentLookItems([]);
+    } catch (e) {
+      showToast('Erro ao guardar look.');
+    }
   };
 
   const toggleItemInLook = (item: any) => {
@@ -152,26 +189,60 @@ export default function App() {
     }
   };
 
-  const deleteItem = (id: number) => {
-    if (activeTab === 'wardrobe') {
-      setWardrobe(wardrobe.filter(i => i.id !== id));
-    } else if (activeTab === 'wishlist') {
-      setWishlist(wishlist.filter(i => i.id !== id));
-    } else if (activeTab === 'inspirations') {
-      setInspirations(inspirations.filter(i => i.id !== id));
+  const deleteItem = async (id: number) => {
+    try {
+      if (activeTab === 'wardrobe') {
+        await fetch(`/api/items/${id}`, { method: 'DELETE' });
+        setWardrobe(wardrobe.filter(i => i.id !== id));
+      } else if (activeTab === 'wishlist') {
+        await fetch(`/api/items/${id}`, { method: 'DELETE' });
+        setWishlist(wishlist.filter(i => i.id !== id));
+      } else if (activeTab === 'inspirations') {
+        await fetch(`/api/inspirations/${id}`, { method: 'DELETE' });
+        setInspirations(inspirations.filter(i => i.id !== id));
+      }
+      showToast('Item eliminado com sucesso.');
+    } catch (e) {
+      showToast('Erro ao eliminar item.');
     }
-    showToast('Item eliminado com sucesso.');
   };
 
-  const moveItemToOtherList = (item: any) => {
-    if (activeTab === 'wardrobe') {
-      setWardrobe(wardrobe.filter(i => i.id !== item.id));
-      setWishlist([item, ...wishlist]);
-      showToast('Peça movida para a Wishlist 🤍');
-    } else {
-      setWishlist(wishlist.filter(i => i.id !== item.id));
-      setWardrobe([item, ...wardrobe]);
-      showToast('Item comprado! Movido para o Acervo 🛍️');
+  const handleIncrementUsage = async (item: any) => {
+    try {
+      const updatedItem = { ...item, usageCount: (item.usageCount || 0) + 1 };
+      await fetch(`/api/items/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedItem)
+      });
+      setWardrobe(wardrobe.map(i => i.id === item.id ? updatedItem : i));
+      setSelectedItem(updatedItem);
+      showToast('Uso registrado!');
+    } catch (e) {
+      showToast('Erro ao registrar uso.');
+    }
+  };
+
+  const moveItemToOtherList = async (item: any) => {
+    try {
+      const newTab = activeTab === 'wardrobe' ? 'wishlist' : 'wardrobe';
+      await fetch(`/api/items/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...item, tab: newTab })
+      });
+
+      if (activeTab === 'wardrobe') {
+        setWardrobe(wardrobe.filter(i => i.id !== item.id));
+        setWishlist([{...item, tab: newTab}, ...wishlist]);
+        showToast('Peça movida para a Wishlist 🤍');
+      } else {
+        setWishlist(wishlist.filter(i => i.id !== item.id));
+        setWardrobe([{...item, tab: newTab}, ...wardrobe]);
+        showToast('Item comprado! Movido para o Acervo 🛍️');
+      }
+    } catch (e) {
+      showToast('Erro ao mover item.');
     }
   };
 
@@ -220,22 +291,32 @@ export default function App() {
     setDragOverTab(null);
   };
 
-  const handleDropOnTab = (e: any, targetTab: string) => {
+  const handleDropOnTab = async (e: any, targetTab: string) => {
     e.preventDefault();
     setDragOverTab(null);
     
     if (!draggedItem || draggedItem.sourceList === targetTab) return;
 
-    if (targetTab === 'wardrobe') {
-      setWishlist(wishlist.filter(i => i.id !== draggedItem.item.id));
-      setWardrobe([draggedItem.item, ...wardrobe]);
-      showToast('Item movido para o Acervo! 🛍️');
-      setActiveTab('wardrobe');
-    } else if (targetTab === 'wishlist') {
-      setWardrobe(wardrobe.filter(i => i.id !== draggedItem.item.id));
-      setWishlist([draggedItem.item, ...wishlist]);
-      showToast('Peça movida para a Wishlist! 🤍');
-      setActiveTab('wishlist');
+    try {
+      await fetch(`/api/items/${draggedItem.item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draggedItem.item, tab: targetTab })
+      });
+
+      if (targetTab === 'wardrobe') {
+        setWishlist(wishlist.filter(i => i.id !== draggedItem.item.id));
+        setWardrobe([{...draggedItem.item, tab: targetTab}, ...wardrobe]);
+        showToast('Item movido para o Acervo! 🛍️');
+        setActiveTab('wardrobe');
+      } else if (targetTab === 'wishlist') {
+        setWardrobe(wardrobe.filter(i => i.id !== draggedItem.item.id));
+        setWishlist([{...draggedItem.item, tab: targetTab}, ...wishlist]);
+        showToast('Peça movida para a Wishlist! 🤍');
+        setActiveTab('wishlist');
+      }
+    } catch (e) {
+      showToast('Erro ao mover item.');
     }
     setDraggedItem(null);
   };
@@ -857,7 +938,7 @@ export default function App() {
                           <p className="text-sm font-medium text-zinc-100">{selectedItem.usageCount || 0} vezes</p>
                         </div>
                       </div>
-                      <Button variant="outline" className="h-8 px-3 text-xs">+1 Uso</Button>
+                      <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => handleIncrementUsage(selectedItem)}>+1 Uso</Button>
                     </div>
                   </>
                 ) : (
